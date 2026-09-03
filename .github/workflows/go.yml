@@ -1,91 +1,61 @@
 name: Go build
-
 on:
-  push:
-    branches:
-      - main
-      - release-*
-    paths-ignore:
-      - 'config/**'
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '**.md'
-      - LICENSE
-      - '**.svg'
-  pull_request:
-    branches:
-      - main
-      - release-*
-    paths-ignore:
-      - 'config/**'
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '**.md'
-      - LICENSE
-      - '**.svg'
-
+  push: null
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # for `git describe`
-          persist-credentials: false
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Build
+      run: 'make build
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+        '
+    - name: Build image
+      run: 'make docker-build
 
-      - name: Build
-        run: |
-          make build
-
-      - name: Build image
-        run: |
-          make docker-build
-
+        '
   generate-sbom:
-    name: "Build :: SBOM"
-    needs: [ build ]
-
+    name: 'Build :: SBOM'
+    needs:
+    - build
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Generate SBOM
+      run: 'mkdir -p sbom && chmod 777 sbom
 
-      - name: Generate SBOM
-        run: |
-          mkdir -p sbom && chmod 777 sbom
-          make sbom/spdx.json
+        make sbom/spdx.json
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: spdx.json
-          path: sbom/spdx.json
-
+        '
+    - uses: actions/upload-artifact@v4
+      with:
+        name: spdx.json
+        path: sbom/spdx.json
   unittest:
     name: Unit test
     needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Run unit tests
+      run: 'make test
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Run unit tests
-        run: |
-          make test
-
+        '
   smoketest:
     name: Smoke test
     needs: build
@@ -94,37 +64,34 @@ jobs:
       fail-fast: false
       matrix:
         smoke-suite:
-          - check-basic
-          - check-config-update-hcp
-          - check-hostpath
-          - check-pvc
-          - check-ha-controller
-          - check-ha-controller-etcd
-          - check-ha-controller-secret
-          - check-jointoken
-          - check-monitoring
-          - check-scaling-etcd
-          - check-upgrade
-
+        - check-basic
+        - check-config-update-hcp
+        - check-hostpath
+        - check-pvc
+        - check-ha-controller
+        - check-ha-controller-etcd
+        - check-ha-controller-secret
+        - check-jointoken
+        - check-monitoring
+        - check-scaling-etcd
+        - check-upgrade
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Create image bundle
+      run: 'make release
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+        make k0smotron-image-bundle.tar
 
-      - name: Create image bundle
-        run: |
-          make release
-          make k0smotron-image-bundle.tar
+        '
+    - name: Run inttest
+      run: 'make -C inttest ${{ matrix.smoke-suite }}
 
-      - name: Run inttest
-        run: |
-          make -C inttest ${{ matrix.smoke-suite }}
-
-
+        '
   capi-smokes-on-different-k0s-versions:
     name: CAPI Smokes Matrix
     needs: build
@@ -132,15 +99,16 @@ jobs:
       fail-fast: false
       matrix:
         smoke-suite:
-          - check-capi-remote-machine
-          - check-capi-remote-machine-template
-        k0s-version: [ "v1.28.11", "v1.29.6", "v1.30.2" ]
-
+        - check-capi-remote-machine
+        - check-capi-remote-machine-template
+        k0s-version:
+        - v1.28.11
+        - v1.29.6
+        - v1.30.2
     uses: ./.github/workflows/capi-smoke-tests.yml
     with:
       smoke-suite: ${{ matrix.smoke-suite }}
       k0s-version: ${{ matrix.k0s-version }}
-
   capi-smokes:
     name: Cluster API smoke tests
     needs: build
@@ -148,30 +116,27 @@ jobs:
       fail-fast: false
       matrix:
         smoke-suite:
-          - check-capi-docker
-          - check-capi-config-update-vm
-          - check-capi-docker-clusterclass
-          - check-capi-docker-clusterclass-k0smotron
-          - check-capi-docker-clusterclass-recreate-upgrade
-          - check-capi-docker-machinedeployment
-          - check-capi-controlplane-docker
-          - check-capi-controlplane-docker-downscaling
-          - check-capi-controlplane-docker-tunneling
-          - check-capi-controlplane-docker-tunneling-proxy
-          - check-capi-controlplane-docker-worker
-          - check-capi-docker-machine-change-args
-          - check-capi-docker-machine-change-template
-          - check-capi-remote-machine-template-update
-          - check-capi-docker-machine-template-update
-          - check-capi-docker-machine-template-update-recreate
-          - check-capi-docker-machine-template-update-recreate-single
-          - check-capi-docker-machine-template-update-recreate-kine
-          - check-capi-remote-machine-job-provision
-
+        - check-capi-docker
+        - check-capi-config-update-vm
+        - check-capi-docker-clusterclass
+        - check-capi-docker-clusterclass-k0smotron
+        - check-capi-docker-clusterclass-recreate-upgrade
+        - check-capi-docker-machinedeployment
+        - check-capi-controlplane-docker
+        - check-capi-controlplane-docker-downscaling
+        - check-capi-controlplane-docker-tunneling
+        - check-capi-controlplane-docker-tunneling-proxy
+        - check-capi-controlplane-docker-worker
+        - check-capi-docker-machine-change-template
+        - check-capi-remote-machine-template-update
+        - check-capi-docker-machine-template-update
+        - check-capi-docker-machine-template-update-recreate
+        - check-capi-docker-machine-template-update-recreate-single
+        - check-capi-docker-machine-template-update-recreate-kine
+        - check-capi-remote-machine-job-provision
     uses: ./.github/workflows/capi-smoke-tests.yml
     with:
       smoke-suite: ${{ matrix.smoke-suite }}
-
   e2e:
     name: E2E test
     needs: build
@@ -180,34 +145,33 @@ jobs:
       fail-fast: false
       matrix:
         e2e-suite:
-          - controlplane-remediation
-          - workload-cluster-inplace-upgrade
-          - workload-cluster-recreate-upgrade
-          - admission-webhook-recreate-strategy-in-single-mode
-          - admission-webhook-k0s-not-compatible
-          - k0smotron-upgrade
-          - machinedeployment
-
+        - controlplane-remediation
+        - workload-cluster-inplace-upgrade
+        - workload-cluster-recreate-upgrade
+        - admission-webhook-t1
+        - admission-webhook-t2
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Run e2e test
+      run: 'export TEST_NAME=Test$(echo "${{ matrix.e2e-suite }}" | awk -F''-'' ''{for(i=1;i<=NF;i++)
+        $i=toupper(substr($i,1,1)) substr($i,2)}1'' OFS='''')
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+        echo "Running E2E tests with TEST_NAME=$TEST_NAME"
 
-      - name: Run e2e test
-        run: |
-          export TEST_NAME=Test$(echo "${{ matrix.e2e-suite }}" | awk -F'-' '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1' OFS='')
-          echo "Running E2E tests with TEST_NAME=$TEST_NAME"
-          make release
-          make e2e TEST_NAME="$TEST_NAME"
+        make release
 
-      - name: Archive artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4.3.2
-        with:
-          name: e2e-artifacts
-          path: _artifacts
-          if-no-files-found: ignore
+        make e2e TEST_NAME="$TEST_NAME"
+
+        '
+    - name: Archive artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4.3.2
+      with:
+        name: e2e-artifacts
+        path: _artifacts
+        if-no-files-found: ignore
